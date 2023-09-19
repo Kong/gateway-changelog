@@ -42,14 +42,6 @@
         "examples": [ 1001, 1002 ]
       }
     },
-    "issues": {
-      "type": "array",
-      "description": "List of associated GitHub issues",
-      "items": {
-        "type": "integer",
-        "examples": [ 1001, 1002 ]
-      }
-    },
     "github-ref": {
       "type": "array",
       "description": "List of associated GitHub references for both PR and issue",
