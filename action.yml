@@ -18,5 +18,5 @@ runs:
     - name: validates changelogs
       uses: thiagodnf/yaml-schema-checker@58b96413951ebe86a396275c48620b8435439694 # v0.0.10
       with:
-        jsonSchemaFile: gateway-changelog/schema.json
+        jsonSchemaFile: gateway-changelog/changelog-schema.json
         yamlFiles: ${{ inputs.files }}
