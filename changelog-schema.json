@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "message": {
+      "type": "string",
+      "description": "Message of the changelog",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "type": {
+      "type": "string",
+      "description": "Changelog type",
+      "enum": [
+        "feature",
+        "bugfix",
+        "dependency",
+        "deprecation",
+        "breaking_change",
+        "performance"
+      ]
+    },
+    "scope": {
+      "type": "string",
+      "description": "Changelog scope",
+      "enum": [
+        "Core",
+        "Plugin",
+        "PDK",
+        "Admin API",
+        "Performance",
+        "Configuration",
+        "Clustering",
+        "Portal"
+      ]
+    },
+    "prs": {
+      "type": "array",
+      "description": "List of associated GitHub PRs",
+      "items": {
+        "type": "integer",
+        "examples": [ 1001, 1002 ]
+      }
+    },
+    "issues": {
+      "type": "array",
+      "description": "List of associated GitHub issues",
+      "items": {
+        "type": "integer",
+        "examples": [ 1001, 1002 ]
+      }
+    },
+    "github-ref": {
+      "type": "array",
+      "description": "List of associated GitHub references for both PR and issue",
+      "items": {
+        "type": "integer",
+        "examples": [ 1001, 1002 ]
+      }
+    },
+    "jiras": {
+      "type": "array",
+      "description": "List of associated Jira tickets for internal tracking.",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z]+-[0-9]+$"
+      }
+    }
+  },
+  "required": [
+    "message",
+    "type"
+  ]
+}
