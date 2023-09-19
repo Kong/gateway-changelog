@@ -42,7 +42,7 @@
         "examples": [ 1001, 1002 ]
       }
     },
-    "github-ref": {
+    "githubs": {
       "type": "array",
       "description": "List of associated GitHub references for both PR and issue",
       "items": {
