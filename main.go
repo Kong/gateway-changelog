@@ -56,14 +56,11 @@ type CommitContext struct {
 }
 
 func isYAML(filename string) bool {
-    return strings.HasSuffix(filename, ".yaml") || strings.HasSuffix(filename, ".yml")
+    return strings.HasSuffix(filename, ".yml")
 }
 
 func fetchCommitContext(filename string) (*CommitContext, error) {
     ctx := &CommitContext{}
-    //if true {
-    //	return ctx, nil
-    //}
     filename = filepath.Join(changelogPath, filename)
 
     client := &http.Client{}
@@ -242,14 +239,18 @@ func collect() (*Data, error) {
 
     maps := make(map[string]map[string][]*ChangelogEntry)
 
-    for _, file := range files {
+    for i, file := range files {
         if file.IsDir() || !isYAML(file.Name()) {
+            log.Printf("Skipping file: %s (%d/%d)", file.Name(), i + 1, len(files))
             continue
         }
+
         content, err := os.ReadFile(filepath.Join(path, file.Name()))
         if err != nil {
             return nil, err
         }
+
+        log.Printf("Processing file: %s (%d/%d)", file.Name(), i + 1, len(files))
 
         // parse entry
         entry := &ChangelogEntry{}
@@ -289,9 +290,6 @@ func collect() (*Data, error) {
         }
         data.Type[t] = list
     }
-
-    //bytes, _ := json.Marshal(data)
-    //fmt.Println(string(bytes))
 
     return data, nil
 }
@@ -334,6 +332,7 @@ func generate(data *Data) (string, error) {
 
             return root, nil
         },
+        "trim": strings.TrimSpace,
     }).ParseFiles("changelog-markdown.tmpl")
     if err != nil {
         panic(err)
@@ -350,7 +349,7 @@ func main() {
     token = os.Getenv("GITHUB_TOKEN")
 
     var app = cli.App{
-        Name:    "changelog",
+        Name:    "Kong changelog generator",
         Version: "1.0.0",
         Commands: []*cli.Command{
             // generate command
@@ -360,22 +359,22 @@ func main() {
                 Flags: []cli.Flag{
                     &cli.StringFlag{
                         Name:     "changelog_path",
-                        Usage:    "The changelog path. (e.g. CHANGELOG/unreleased)",
+                        Usage:    "The changelog path under repo_path (relative). (e.g. changelog/unreleased/kong)",
                         Required: true,
                     },
                     &cli.StringFlag{
                         Name:     "system",
-                        Usage:    "The system name. (e.g. Kong)",
+                        Usage:    "The software name. (e.g. Kong)",
                         Required: true,
                     },
                     &cli.StringFlag{
                         Name:     "repo_path",
-                        Usage:    "The repository path. (e.g. /path/to/your/repository)",
+                        Usage:    "The repository path (full). (e.g. /path/to/your/repository)",
                         Required: true,
                     },
                     &cli.StringFlag{
                         Name:     "repo",
-                        Usage:    "The repository name. (e.g. Kong/kong)",
+                        Usage:    "The repository ORG/NAME under GitHub. (e.g. Kong/kong)",
                         Required: true,
                     },
                 },
