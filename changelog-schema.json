@@ -31,7 +31,8 @@
         "Performance",
         "Configuration",
         "Clustering",
-        "Portal"
+        "Portal",
+        "CLI Command"
       ]
     },
     "prs": {
