@@ -32,7 +32,7 @@
         "Configuration",
         "Clustering",
         "Portal",
-        "Command"
+        "CLI Command"
       ]
     },
     "prs": {
