@@ -1,0 +1,32 @@
+{{- /* ===== entry template ==== */ -}}
+{{ define "entry" }}
+- {{ trim $.Message }}
+{{ range $i, $github := $.ParsedGithubs }} [{{ $github.Name }}]({{ $github.Link }}) {{- end }}
+{{ range $i, $jira := $.ParsedJiras }} [{{ $jira.ID }}]({{ $jira.Link }}) {{- end }}
+{{- end }}
+{{- /* ===== entry template ==== */ -}}
+{{- /* ==== section template ==== */ -}}
+{{- define "section"  }}
+{{- if .scopes }}
+{{- $length := len .scopes }}
+{{- if gt $length 0 }}
+### {{ .sectionName }}
+{{- range $i, $scope := .scopes }}
+#### {{ $scope.ScopeName }}
+{{- range $j, $entry := $scope.Entries }}
+{{ template "entry" $entry }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /* ==== section template ==== */ -}}
+
+## {{ .System }}
+
+{{ template "section" (dict "sectionName" "Performance" "scopes" .Type.performance) }}
+{{ template "section" (dict "sectionName" "Breaking Changes" "scopes" .Type.breaking_change ) }}
+{{ template "section" (dict "sectionName" "Deprecations" "scopes" .Type.deprecation ) }}
+{{ template "section" (dict "sectionName" "Dependencies" "scopes" .Type.dependency ) }}
+{{ template "section" (dict "sectionName" "Features" "scopes" .Type.feature ) }}
+{{ template "section" (dict "sectionName" "Fixes" "scopes" .Type.bugfix ) }}
