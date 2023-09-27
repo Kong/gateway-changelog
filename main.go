@@ -347,6 +347,9 @@ func generate(data *Data) (string, error) {
 
 func main() {
     token = os.Getenv("GITHUB_TOKEN")
+    if token == "" {
+        log.Fatal("GITHUB_TOKEN environment variable is missing")
+    }
 
     var app = cli.App{
         Name:    "Kong changelog generator",
