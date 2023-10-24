@@ -1,4 +1,4 @@
-module konghq.com/changelog
+module github.com/Kong/changelog
 
 go 1.20
 
