@@ -1,10 +1,11 @@
 {{- /* ===== entry template ==== */ -}}
 {{ define "entry" }}
 - {{ trim $.Message }}
-{{ range $i, $github := $.ParsedGithubs }} [{{ $github.Name }}]({{ $github.Link }}) {{- end }}
-{{ range $i, $jira := $.ParsedJiras }} [{{ $jira.ID }}]({{ $jira.Link }}) {{- end }}
+{{ range $i, $github := $.Context.GitHubs }} [{{ $github.Name }}]({{ $github.Link }}) {{- end }}
+{{ range $i, $jira := $.Context.Jiras }} [{{ $jira.ID }}]({{ $jira.Link }}) {{- end }}
 {{- end }}
 {{- /* ===== entry template ==== */ -}}
+
 {{- /* ==== section template ==== */ -}}
 {{- define "section"  }}
 {{- if .scopes }}
@@ -22,7 +23,7 @@
 {{- end }}
 {{- /* ==== section template ==== */ -}}
 
-## {{ .System }}
+## {{ .Product }}
 
 {{ template "section" (dict "sectionName" "Performance" "scopes" .Type.performance) }}
 {{ template "section" (dict "sectionName" "Breaking Changes" "scopes" .Type.breaking_change ) }}

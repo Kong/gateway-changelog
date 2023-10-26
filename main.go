@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"io"
 	"log"
+    "strconv"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -32,43 +33,61 @@ var (
 		"Clustering":    70,
 		"Default":       100, // default priority
 	}
-	repoPath      string
-	changelogPath string
-	system        string
+	changelogPath        string
+    repoRoot string
+	product        string
 	repo          string
 	token         string
+JiraReg = regexp.MustCompile(`[A-Z]+-\d+`)
+GitHubReg = regexp.MustCompile(`https://github\.com/(Kong/[^/]+?)/(?:pull|issues)/(\d+)`)
 )
 
-type CommitCtx struct {
-	SHA     string
-	Message string
+type Github struct {
+	Name string
+	Link string
 }
 
-type PullCtx struct {
-	Number int
-	Title  string
-	Body   string
+type Jira struct {
+	ID   string
+	Link string
 }
 
 type CommitContext struct {
-	Commit  CommitCtx
-	PullCtx PullCtx
+	GitHubs map[string]Github
+	Jiras map[string]Jira
 }
+
 
 func isYAML(filename string) bool {
 	return strings.HasSuffix(filename, ".yml")
 }
 
+func extractLinks(text string, githubs map[string]Github, jiras map[string]Jira) {
+    jiras_find := JiraReg.FindAllString(text, -1)
+    for _, jira := range jiras_find {
+        jiras[jira] = Jira{ID: jira, Link: JiraBaseUrl + jira}
+    }
+
+    githubs_find := GitHubReg.FindAllStringSubmatch(text, -1)
+    for _, github := range githubs_find {
+        if strings.ToLower(repo) == strings.ToLower(github[1]) {
+            githubs["#" + github[2]] = Github{Name: "#" + github[2], Link: github[0]}
+
+        } else {
+            text := github[1] + "#" + github[2]
+            githubs[text] = Github{Name: text, Link: github[0]}
+        }
+    }
+}
+
 func fetchCommitContext(filename string) (*CommitContext, error) {
-	ctx := &CommitContext{}
+    ctx := &CommitContext{GitHubs: make(map[string]Github), Jiras: make(map[string]Jira)}
 	filename = filepath.Join(changelogPath, filename)
 
 	client := &http.Client{}
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s/commits?path=%s", repo, filename), nil)
-	if len(token) > 0 {
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
-	}
+    req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
 	response, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch commits: %v", err)
@@ -89,15 +108,10 @@ func fetchCommitContext(filename string) (*CommitContext, error) {
 		return nil, fmt.Errorf("failed unmarshal: %v", err)
 	}
 
-	ctx.Commit = CommitCtx{
-		SHA:     res[0]["sha"].(string),
-		Message: res[0]["commit"].(map[string]interface{})["message"].(string),
-	}
+    extractLinks(res[0]["commit"].(map[string]interface{})["message"].(string), ctx.GitHubs, ctx.Jiras)
 
-	req, err = http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s/commits/%s/pulls", repo, ctx.Commit.SHA), nil)
-	if len(token) > 0 {
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
-	}
+	req, err = http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s/commits/%s/pulls", repo, res[0]["sha"].(string)), nil)
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
 	response, err = client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch pulls: %v", err)
@@ -116,19 +130,12 @@ func fetchCommitContext(filename string) (*CommitContext, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed unmarshal: %v", err)
 	}
-	ctx.PullCtx = PullCtx{
-		Number: int(res[len(res)-1]["number"].(float64)),
-		Title:  res[len(res)-1]["title"].(string),
-		Body:   res[len(res)-1]["body"].(string),
-	}
+
+    extractLinks(res[len(res)-1]["body"].(string), ctx.GitHubs, ctx.Jiras)
+    pr_id := "#" + strconv.Itoa(int(res[len(res)-1]["number"].(float64)))
+    ctx.GitHubs[pr_id] = Github{Name: pr_id, Link: res[len(res)-1]["html_url"].(string)}
 
 	return ctx, nil
-}
-
-func matchPattern(text, pattern string, t *[]string) {
-	re := regexp.MustCompile(pattern)
-	matches := re.FindAllString(text, -1)
-	*t = append(*t, matches...)
 }
 
 type ScopeEntries struct {
@@ -137,41 +144,15 @@ type ScopeEntries struct {
 }
 
 type Data struct {
-	System string
+	Product string
 	Type   map[string][]ScopeEntries
-}
-
-type Jira struct {
-	ID   string
-	Link string
-}
-
-type Github struct {
-	Name string
-	Link string
 }
 
 type ChangelogEntry struct {
 	Message       string   `yaml:"message"`
 	Type          string   `yaml:"type"`
 	Scope         string   `yaml:"scope"`
-	Prs           []int    `yaml:"prs"`
-	Githubs       []int    `yaml:"githubs"`
-	Jiras         []string `yaml:"jiras"`
-	ParsedJiras   []*Jira
-	ParsedGithubs []*Github
-}
-
-func parseGithub(githubNos []int) []*Github {
-	list := make([]*Github, 0)
-	for _, no := range githubNos {
-		github := &Github{
-			Name: fmt.Sprintf("#%d", no),
-			Link: fmt.Sprintf("https://github.com/%s/issues/%d", repo, no),
-		}
-		list = append(list, github)
-	}
-	return list
+    Context       *CommitContext
 }
 
 func processEntry(filename string, entry *ChangelogEntry) error {
@@ -184,35 +165,7 @@ func processEntry(filename string, entry *ChangelogEntry) error {
 		return fmt.Errorf("faield to fetch commit ctx: %v", err)
 	}
 
-	// jiras
-	if len(entry.Jiras) == 0 {
-		jiraMap := make(map[string]bool)
-		r := regexp.MustCompile(`[a-zA-Z]+-\d+`)
-		jiras := r.FindAllString(ctx.PullCtx.Body, -1)
-		for _, jira := range jiras {
-			if !jiraMap[jira] {
-				entry.Jiras = append(entry.Jiras, jira)
-				jiraMap[jira] = true
-			}
-		}
-	}
-	for _, jiraId := range entry.Jiras {
-		jira := Jira{
-			ID:   jiraId,
-			Link: JiraBaseUrl + jiraId,
-		}
-		entry.ParsedJiras = append(entry.ParsedJiras, &jira)
-	}
-
-	// githubs
-	if len(entry.Githubs) == 0 {
-		entry.Githubs = entry.Prs
-	}
-	if len(entry.Githubs) == 0 {
-		entry.Githubs = append(entry.Githubs, ctx.PullCtx.Number)
-	}
-
-	entry.ParsedGithubs = parseGithub(entry.Githubs)
+    entry.Context = ctx
 
 	return nil
 }
@@ -226,14 +179,14 @@ func mapKeys(m map[string][]*ChangelogEntry) []string {
 }
 
 func collect() (*Data, error) {
-	path := filepath.Join(repoPath, changelogPath)
+    path := filepath.Join(repoRoot, changelogPath)
 	files, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}
 
 	data := &Data{
-		System: system,
+		Product: product,
 		Type:   make(map[string][]ScopeEntries),
 	}
 
@@ -362,17 +315,17 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:     "changelog_path",
-						Usage:    "The changelog path under repo_path (relative). (e.g. changelog/unreleased/kong)",
+						Usage:    "Relative path under repo_root of the changelog files. (e.g. \"changelog/unreleased/kong\")",
 						Required: true,
 					},
 					&cli.StringFlag{
-						Name:     "system",
-						Usage:    "The software name. (e.g. Kong)",
+						Name:     "repo_root",
+						Usage:    "Path containing the changelog files. (e.g. \"/path/to/kong/\")",
 						Required: true,
 					},
 					&cli.StringFlag{
-						Name:     "repo_path",
-						Usage:    "The repository path (full). (e.g. /path/to/your/repository)",
+						Name:     "product",
+						Usage:    "The product name. (e.g. \"Kong Gateway\")",
 						Required: true,
 					},
 					&cli.StringFlag{
@@ -382,16 +335,16 @@ func main() {
 					},
 				},
 				Action: func(c *cli.Context) error {
-					repoPath = c.String("repo_path")
 					changelogPath = c.String("changelog_path")
-					system = c.String("system")
+                    repoRoot = c.String("repo_root")
+					product = c.String("product")
 					repo = c.String("repo")
 
 					data, err := collect()
 					if err != nil {
 						return err
 					}
-					data.System = system
+					data.Product = product
 					changelog, err := generate(data)
 					_ = changelog
 					return err
