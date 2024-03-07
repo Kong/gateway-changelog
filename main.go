@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/Kong/changelog/cmd"
 	"os"
 )
@@ -9,7 +8,7 @@ import (
 func main() {
 	app := cmd.New()
 	if err := app.Run(os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+		cmd.Error("Error: %s\n", err.Error())
 		os.Exit(1)
 	}
 }

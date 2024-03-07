@@ -10,7 +10,6 @@ import (
 	"github.com/google/go-github/v56/github"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -343,9 +342,7 @@ func generate(data *TemplateData) error {
 
 // Generate output the changelog
 func Generate() error {
-	if debug {
-		log.Printf("Options: %+v", options)
-	}
+	Debug("Options: %+v", options)
 
 	data, err := collect()
 	if err != nil {

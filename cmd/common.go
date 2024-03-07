@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"log"
 	"net/http"
 )
 
@@ -10,6 +9,6 @@ type LoggingTransport struct {
 }
 
 func (t *LoggingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	log.Printf("curl '%s' -H 'Authorization: %s'", request.URL, "ghp_******")
+	Info("curl '%s' -H 'Authorization: %s'", request.URL, "ghp_******")
 	return t.Transport.RoundTrip(request)
 }
