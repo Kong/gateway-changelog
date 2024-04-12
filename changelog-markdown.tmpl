@@ -12,7 +12,9 @@
 {{- if gt $length 0 }}
 ### {{ .sectionName }}
 {{- range $i, $scope := .scopes }}
+{{- if gt $length 0 }}
 #### {{ $scope.ScopeName }}
+{{- end }}
 {{- range $j, $entry := $scope.Entries }}
 {{ template "entry" $entry }}
 {{- end }}
@@ -22,7 +24,7 @@
 {{- end }}
 {{- /* ==== section template ==== */ -}}
 
-## {{ .System }}
+## {{ .Title }}
 
 {{ template "section" (dict "sectionName" "Performance" "scopes" .Type.performance) }}
 {{ template "section" (dict "sectionName" "Breaking Changes" "scopes" .Type.breaking_change ) }}
