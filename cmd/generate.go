@@ -6,16 +6,17 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"github.com/Kong/changelog/utils"
-	"github.com/google/go-github/v56/github"
-	"github.com/urfave/cli/v2"
-	"gopkg.in/yaml.v3"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"text/template"
+
+	"github.com/Kong/changelog/utils"
+	"github.com/google/go-github/v56/github"
+	"github.com/urfave/cli/v2"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -91,10 +92,23 @@ func fetchCommitContext(filename string) (ctx CommitContext, err error) {
 		return ctx, fmt.Errorf("PullReqeusts is empty")
 	}
 
+	// Filter to find only merged PRs, starting from the last one
+	var mergedPR *github.PullRequest
+	for i := len(prs) - 1; i >= 0; i-- {
+		if prs[i].MergedAt != nil {
+			mergedPR = prs[i]
+			break
+		}
+	}
+
+	if mergedPR == nil {
+		return ctx, fmt.Errorf("no merged PR found for commit")
+	}
+
 	ctx.PrCtx = PullRequestContext{
-		Number: prs[len(prs)-1].GetNumber(),
-		Title:  prs[len(prs)-1].GetTitle(),
-		Body:   prs[len(prs)-1].GetBody(),
+		Number: mergedPR.GetNumber(),
+		Title:  mergedPR.GetTitle(),
+		Body:   mergedPR.GetBody(),
 	}
 
 	return ctx, nil
