@@ -9,7 +9,7 @@ func MatchJiras(str string) []string {
 	r := regexp.MustCompile(`[A-Z]+-\d+`)
 	jiras := make([]string, 0)
 	strs := r.FindAllString(str, -1)
-	r1 := regexp.MustCompile(`^[A-Z]{3,8}-\d{1,6}$`)
+	r1 := regexp.MustCompile(`^[A-Z]{2,8}-\d{1,6}$`)
 	for _, str := range strs {
 		if r1.MatchString(str) {
 			jiras = append(jiras, str)
