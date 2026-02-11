@@ -14,7 +14,7 @@ func New() *cli.App {
 		Name:        "changelog",
 		Usage:       "changelog [command]",
 		Description: "A changelog tool to manage changelog.",
-		Version:     "2.0.0",
+		Version:     "2.0.1",
 
 		// global flags
 		Flags: []cli.Flag{
