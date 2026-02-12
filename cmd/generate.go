@@ -76,15 +76,15 @@ func isYAML(filename string) bool {
 }
 
 func fetchCommitContext(filename string) (ctx CommitContext, err error) {
-	commits, err := utils.ListCommits("", filename)
+	commit, err := utils.FindOriginalCommit("", filename)
 	if err != nil {
 		return
 	}
 	if debug {
-		Debug("file %s commits: %v", filename, commits)
+		Debug("file %s original commit: %s", filename, commit)
 	}
 
-	prs, _, err := client.PullRequests.ListPullRequestsWithCommit(context.TODO(), options.GithubApiOwner, options.GithubApiRepo, commits[len(commits)-1], nil)
+	prs, _, err := client.PullRequests.ListPullRequestsWithCommit(context.TODO(), options.GithubApiOwner, options.GithubApiRepo, commit, nil)
 	if err != nil {
 		return ctx, fmt.Errorf("failed to fetch pulls: %v", err)
 	}
