@@ -6,16 +6,8 @@ import (
 )
 
 func MatchJiras(str string) []string {
-	r := regexp.MustCompile(`[A-Z]+-\d+`)
-	jiras := make([]string, 0)
-	strs := r.FindAllString(str, -1)
-	r1 := regexp.MustCompile(`^[A-Z]{2,8}-\d{1,6}$`)
-	for _, str := range strs {
-		if r1.MatchString(str) {
-			jiras = append(jiras, str)
-		}
-	}
-	return jiras
+	r := regexp.MustCompile(`\b(?:FTI|AG|KAG|KM|K8|OLLY|KOKO)-\d{1,6}\b`)
+	return r.FindAllString(str, -1)
 }
 
 func DirExists(path string) (bool, error) {
