@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -71,8 +73,61 @@ type PullRequestContext struct {
 	Body   string
 }
 
+var pullRequestRefPattern = regexp.MustCompile(`\(#(\d+)\)`)
+
 func isYAML(filename string) bool {
 	return strings.HasSuffix(filename, ".yml")
+}
+
+func findMergedPullRequest(prs []*github.PullRequest) *github.PullRequest {
+	for i := len(prs) - 1; i >= 0; i-- {
+		if prs[i].MergedAt != nil {
+			return prs[i]
+		}
+	}
+
+	return nil
+}
+
+func fetchMergedPullRequestFromCommitMessage(commit string) (*github.PullRequest, error) {
+	repoCommit, _, err := client.Repositories.GetCommit(context.TODO(), options.GithubApiOwner, options.GithubApiRepo, commit, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read commit message for %s: %v", commit, err)
+	}
+
+	matches := pullRequestRefPattern.FindAllStringSubmatch(repoCommit.GetCommit().GetMessage(), -1)
+	if len(matches) == 0 {
+		return nil, nil
+	}
+
+	seen := make(map[int]struct{}, len(matches))
+	for i := len(matches) - 1; i >= 0; i-- {
+		prNumber, err := strconv.Atoi(matches[i][1])
+		if err != nil {
+			continue
+		}
+
+		if _, ok := seen[prNumber]; ok {
+			continue
+		}
+		seen[prNumber] = struct{}{}
+
+		pr, resp, err := client.PullRequests.Get(context.TODO(), options.GithubApiOwner, options.GithubApiRepo, prNumber)
+		if err != nil {
+			if debug && (resp == nil || resp.StatusCode != http.StatusNotFound) {
+				Debug("failed to fetch PR #%d for commit %s: %v", prNumber, commit, err)
+			}
+			continue
+		}
+		if pr.MergedAt == nil {
+			continue
+		}
+		if pr.GetMergeCommitSHA() == commit {
+			return pr, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func fetchCommitContext(filename string) (ctx CommitContext, err error) {
@@ -80,29 +135,29 @@ func fetchCommitContext(filename string) (ctx CommitContext, err error) {
 	if err != nil {
 		return
 	}
+	ctx.SHA = commit
 	if debug {
 		Debug("file %s original commit: %s", filename, commit)
 	}
 
 	prs, _, err := client.PullRequests.ListPullRequestsWithCommit(context.TODO(), options.GithubApiOwner, options.GithubApiRepo, commit, nil)
 	if err != nil {
-		return ctx, fmt.Errorf("failed to fetch pulls: %v", err)
-	}
-	if len(prs) == 0 {
-		return ctx, fmt.Errorf("PullReqeusts is empty")
+		return ctx, fmt.Errorf("failed to fetch pulls for commit %s: %v", commit, err)
 	}
 
-	// Filter to find only merged PRs, starting from the last one
-	var mergedPR *github.PullRequest
-	for i := len(prs) - 1; i >= 0; i-- {
-		if prs[i].MergedAt != nil {
-			mergedPR = prs[i]
-			break
+	mergedPR := findMergedPullRequest(prs)
+	if mergedPR == nil {
+		mergedPR, err = fetchMergedPullRequestFromCommitMessage(commit)
+		if err != nil {
+			return ctx, fmt.Errorf("failed to resolve merged PR from commit message: %v", err)
+		}
+		if debug && mergedPR != nil {
+			Debug("resolved merged PR #%d from commit message for %s", mergedPR.GetNumber(), commit)
 		}
 	}
 
 	if mergedPR == nil {
-		return ctx, fmt.Errorf("no merged PR found for commit")
+		return ctx, fmt.Errorf("no merged PR found for commit %s", commit)
 	}
 
 	ctx.PrCtx = PullRequestContext{
@@ -166,7 +221,7 @@ func processEntry(entry *ChangelogEntry) error {
 
 	ctx, err := fetchCommitContext(entry.fileName)
 	if err != nil {
-		return fmt.Errorf("faield to fetch commit ctx: %v", err)
+		return fmt.Errorf("failed to fetch commit ctx: %v", err)
 	}
 
 	// jiras
@@ -253,7 +308,7 @@ func collectFromFolder(repoPath string, changelogPath string, maps map[string]ma
 
 		err = processEntry(entry)
 		if err != nil {
-			return fmt.Errorf("fialed to process entry: %v", err)
+			return fmt.Errorf("failed to process entry: %v", err)
 		}
 
 		if maps[entry.Type] == nil {
