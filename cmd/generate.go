@@ -73,6 +73,84 @@ type PullRequestContext struct {
 	Body   string
 }
 
+type MissingPullRequestError struct {
+	CommitSHA string
+}
+
+func (e *MissingPullRequestError) Error() string {
+	return fmt.Sprintf("no merged PR found for commit %s", e.CommitSHA)
+}
+
+type EntryProcessingFailure struct {
+	FileName  string
+	CommitSHA string
+	Err       error
+}
+
+func (e *EntryProcessingFailure) Error() string {
+	var missingPR *MissingPullRequestError
+	if errors.As(e.Err, &missingPR) {
+		return fmt.Sprintf("reason: missing merged PR\nfile: %s\ncommit: %s", e.FileName, missingPR.CommitSHA)
+	}
+
+	if e.CommitSHA == "" {
+		return fmt.Sprintf("file: %s\nerror: %v", e.FileName, e.Err)
+	}
+
+	return fmt.Sprintf("file: %s\ncommit: %s\nerror: %v", e.FileName, e.CommitSHA, e.Err)
+}
+
+func (e *EntryProcessingFailure) Unwrap() error {
+	return e.Err
+}
+
+func logEntryProcessingFailure(failure EntryProcessingFailure) {
+	Error("skipping changelog entry: %s\n", strings.ReplaceAll(failure.Error(), "\n", "\n  "))
+}
+
+func logEntryProcessingSummary(failures []EntryProcessingFailure) {
+	if len(failures) == 0 {
+		return
+	}
+
+	entryNoun := "entries"
+	if len(failures) == 1 {
+		entryNoun = "entry"
+	}
+
+	Error("\nskipped %d changelog %s:\n", len(failures), entryNoun)
+	for i, failure := range failures {
+		Error("%d. %s\n", i+1, strings.ReplaceAll(failure.Error(), "\n", "\n   "))
+	}
+}
+
+func entryProcessingFailureFromError(err error, fileName string) *EntryProcessingFailure {
+	var failure *EntryProcessingFailure
+	if errors.As(err, &failure) {
+		if failure.FileName == "" {
+			failure.FileName = fileName
+		}
+		if failure.CommitSHA == "" {
+			var missingPR *MissingPullRequestError
+			if errors.As(failure.Err, &missingPR) {
+				failure.CommitSHA = missingPR.CommitSHA
+			}
+		}
+		return failure
+	}
+
+	var missingPR *MissingPullRequestError
+	if !errors.As(err, &missingPR) {
+		return nil
+	}
+
+	return &EntryProcessingFailure{
+		FileName:  fileName,
+		CommitSHA: missingPR.CommitSHA,
+		Err:       err,
+	}
+}
+
 var pullRequestRefPattern = regexp.MustCompile(`\(#(\d+)\)`)
 
 func isYAML(filename string) bool {
@@ -157,7 +235,7 @@ func fetchCommitContext(filename string) (ctx CommitContext, err error) {
 	}
 
 	if mergedPR == nil {
-		return ctx, fmt.Errorf("no merged PR found for commit %s", commit)
+		return ctx, &MissingPullRequestError{CommitSHA: commit}
 	}
 
 	ctx.PrCtx = PullRequestContext{
@@ -221,7 +299,16 @@ func processEntry(entry *ChangelogEntry) error {
 
 	ctx, err := fetchCommitContext(entry.fileName)
 	if err != nil {
-		return fmt.Errorf("failed to fetch commit ctx: %v", err)
+		var missingPR *MissingPullRequestError
+		if !errors.As(err, &missingPR) {
+			return fmt.Errorf("failed to fetch commit ctx: %v", err)
+		}
+
+		return &EntryProcessingFailure{
+			FileName:  entry.fileName,
+			CommitSHA: ctx.SHA,
+			Err:       fmt.Errorf("failed to fetch commit ctx: %w", err),
+		}
 	}
 
 	// jiras
@@ -266,16 +353,17 @@ func mapKeys(m map[string][]*ChangelogEntry) []string {
 	return keys
 }
 
-func collectFromFolder(repoPath string, changelogPath string, maps map[string]map[string][]*ChangelogEntry) error {
+func collectFromFolder(repoPath string, changelogPath string, maps map[string]map[string][]*ChangelogEntry) ([]EntryProcessingFailure, error) {
+	failures := make([]EntryProcessingFailure, 0)
 	changelogPath = filepath.Join(repoPath, changelogPath)
 	exists, err := utils.DirExists(changelogPath)
 	if !exists {
-		return err
+		return failures, err
 	}
 
 	files, err := os.ReadDir(changelogPath)
 	if err != nil {
-		return err
+		return failures, err
 	}
 	total := len(files)
 	Info("reading files from folder %s", changelogPath)
@@ -290,9 +378,11 @@ func collectFromFolder(repoPath string, changelogPath string, maps map[string]ma
 			continue
 		}
 
-		content, err := os.ReadFile(filepath.Join(changelogPath, file.Name()))
+		filePath := filepath.Join(changelogPath, file.Name())
+
+		content, err := os.ReadFile(filePath)
 		if err != nil {
-			return err
+			return failures, err
 		}
 
 		Info("processing changelog file: %s (%d/%d)", file.Name(), i, total)
@@ -301,14 +391,21 @@ func collectFromFolder(repoPath string, changelogPath string, maps map[string]ma
 		entry := &ChangelogEntry{}
 		err = yaml.Unmarshal(content, entry)
 		if err != nil {
-			return fmt.Errorf("failed to unmarshal YAML from %s: %v", file.Name(), err)
+			return failures, fmt.Errorf("failed to unmarshal YAML from %s: %v", file.Name(), err)
 		}
 
-		entry.fileName = filepath.Join(changelogPath, file.Name())
+		entry.fileName = filePath
 
 		err = processEntry(entry)
 		if err != nil {
-			return fmt.Errorf("failed to process entry: %v", err)
+			failure := entryProcessingFailureFromError(err, filePath)
+			if failure == nil {
+				return failures, fmt.Errorf("failed to process entry: %v", err)
+			}
+
+			logEntryProcessingFailure(*failure)
+			failures = append(failures, *failure)
+			continue
 		}
 
 		if maps[entry.Type] == nil {
@@ -317,16 +414,18 @@ func collectFromFolder(repoPath string, changelogPath string, maps map[string]ma
 		maps[entry.Type][entry.Scope] = append(maps[entry.Type][entry.Scope], entry)
 	}
 
-	return nil
+	return failures, nil
 }
 
-func collect() (*TemplateData, error) {
+func collect() (*TemplateData, []EntryProcessingFailure, error) {
 	maps := make(map[string]map[string][]*ChangelogEntry)
+	failures := make([]EntryProcessingFailure, 0)
 
 	for _, path := range options.ChangelogPaths {
-		err := collectFromFolder(options.RepoPath, path, maps)
+		folderFailures, err := collectFromFolder(options.RepoPath, path, maps)
+		failures = append(failures, folderFailures...)
 		if err != nil {
-			return nil, err
+			return nil, failures, err
 		}
 	}
 
@@ -354,7 +453,7 @@ func collect() (*TemplateData, error) {
 		data.Type[t] = list
 	}
 
-	return data, nil
+	return data, failures, nil
 }
 
 func generate(data *TemplateData) error {
@@ -413,7 +512,8 @@ func generate(data *TemplateData) error {
 func Generate() error {
 	Debug("Options: %+v", options)
 
-	data, err := collect()
+	data, failures, err := collect()
+	logEntryProcessingSummary(failures)
 	if err != nil {
 		return err
 	}
