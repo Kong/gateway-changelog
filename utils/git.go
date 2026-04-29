@@ -43,7 +43,7 @@ func findAddedCommit(workingDir, filename string) string {
 		return ""
 	}
 	lines := strings.Split(trimmed, "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
+	return strings.TrimSpace(lines[0])
 }
 
 // findOldestCommit returns the oldest commit that touched the file.
