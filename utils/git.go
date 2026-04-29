@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+type NoCommitsFoundError struct {
+	FileName string
+}
+
+func (e *NoCommitsFoundError) Error() string {
+	return fmt.Sprintf("no commits found for %s", e.FileName)
+}
+
 // findRenameSource checks if a commit renamed a file to `filename`,
 // returns the old filename if it was a rename, otherwise returns "".
 func findRenameSource(workingDir, commit, filename string) string {
@@ -69,7 +77,7 @@ func FindOriginalCommit(workingDir, filename string) (string, error) {
 	if commit == "" {
 		commit = findOldestCommit(workingDir, filename)
 		if commit == "" {
-			return "", fmt.Errorf("no commits found for %s", filename)
+			return "", &NoCommitsFoundError{FileName: filename}
 		}
 		return commit, nil
 	}
