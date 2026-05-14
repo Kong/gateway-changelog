@@ -76,7 +76,7 @@ func isYAML(filename string) bool {
 }
 
 func fetchCommitContext(filename string) (ctx CommitContext, err error) {
-	commit, err := utils.FindOriginalCommit("", filename)
+	commit, err := utils.FindOriginalCommit(options.RepoPath, filename)
 	if err != nil {
 		return
 	}
