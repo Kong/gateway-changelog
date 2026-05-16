@@ -31,7 +31,7 @@ func findRenameSource(workingDir, commit, filename string) string {
 
 // findAddedCommit finds the commit where the file was first added.
 func findAddedCommit(workingDir, filename string) string {
-	cmd := exec.Command("git", "log", "--diff-filter=A",
+	cmd := exec.Command("git", "log", "--diff-filter=A", "--no-show-signature",
 		"--pretty=format:%H", "--", filename)
 	cmd.Dir = workingDir
 	output, err := cmd.Output()
@@ -48,7 +48,7 @@ func findAddedCommit(workingDir, filename string) string {
 
 // findOldestCommit returns the oldest commit that touched the file.
 func findOldestCommit(workingDir, filename string) string {
-	cmd := exec.Command("git", "log", "--pretty=format:%H", "--", filename)
+	cmd := exec.Command("git", "log", "--no-show-signature", "--pretty=format:%H", "--", filename)
 	cmd.Dir = workingDir
 	output, err := cmd.Output()
 	if err != nil {
