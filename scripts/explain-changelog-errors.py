@@ -78,8 +78,10 @@ def main():
             error(file, f"'scope' must be one of {', '.join(scope_enum)}; got \"{scope}\"")
 
         if scope == "Plugin" and isinstance(message, str) and not re.match(plugin_pattern, message):
-            error(file, "scope is \"Plugin\", so 'message' must start with the plugin name "
-                        "in bold followed by a space, e.g. \"**rate-limiting** Fixed an issue ...\"")
+            error(file, "scope is \"Plugin\", so 'message' must start with one or more "
+                        "comma-separated plugin names in bold, followed by a space, e.g. "
+                        "\"**rate-limiting** Fixed an issue ...\" or "
+                        "\"**kafka-upstream**, **confluent**: Added ...\"")
 
         for key in ("prs", "githubs"):
             val = doc.get(key)
