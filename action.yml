@@ -10,11 +10,14 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      with:
-        repository: Kong/gateway-changelog
-        ref: ${{ github.action_ref }}
-        path: gateway-changelog
+    # The action repo is already downloaded at the pinned ref into
+    # GITHUB_ACTION_PATH, so copy the schema from there instead of
+    # checking out again (which would not honor the pinned ref).
+    - name: prepare changelog schema
+      shell: bash
+      run: |
+        mkdir -p gateway-changelog
+        cp "${GITHUB_ACTION_PATH}/changelog-schema.json" gateway-changelog/changelog-schema.json
 
     - name: validates changelogs
       uses: thiagodnf/yaml-schema-checker@3c4a632d4124b6c00e38b492b2eb35dea715e1ae # v0.0.12
