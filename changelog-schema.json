@@ -63,5 +63,19 @@
   "required": [
     "message",
     "type"
-  ]
+  ],
+  "if": {
+    "required": [ "scope" ],
+    "properties": {
+      "scope": { "const": "Plugin" }
+    }
+  },
+  "then": {
+    "properties": {
+      "message": {
+        "pattern": "^\\*\\*[^*\\s][^*]*\\*\\*:? ",
+        "description": "When scope is Plugin, message must start with the plugin name in bold, e.g. \"**rate-limiting** ...\""
+      }
+    }
+  }
 }
