@@ -28,4 +28,4 @@ runs:
     - name: explain validation errors
       if: failure()
       shell: bash
-      run: python3 "${GITHUB_ACTION_PATH}/scripts/explain-changelog-errors.py" "${GITHUB_ACTION_PATH}/changelog-schema.json" '${{ inputs.files }}'
+      run: python3 "${GITHUB_ACTION_PATH}/scripts/explain-changelog-errors.py" "gateway-changelog/changelog-schema.json" '${{ inputs.files }}'

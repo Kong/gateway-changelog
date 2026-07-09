@@ -59,6 +59,17 @@ def main():
             error(file, "changelog must be a YAML mapping with 'message' and 'type' keys")
             continue
 
+        # keys are case-sensitive: "Scope: Plugin" silently becomes an
+        # unknown key and the entry loses its scope
+        for key in doc:
+            if key in props:
+                continue
+            lowered = str(key).lower()
+            if lowered in props:
+                error(file, f"unknown key \"{key}\" — keys are case-sensitive; did you mean '{lowered}'?")
+            else:
+                error(file, f"unknown key \"{key}\" — allowed keys: {', '.join(props)}")
+
         message = doc.get("message")
         if message is None:
             error(file, "'message' is required")
@@ -67,15 +78,22 @@ def main():
         elif not (msg_min <= len(message) <= msg_max):
             error(file, f"'message' must be {msg_min}-{msg_max} characters, got {len(message)}")
 
+        def enum_error(field, value, enum):
+            match = next((e for e in enum if e.lower() == str(value).lower()), None)
+            if match is not None:
+                error(file, f"'{field}' value \"{value}\" has wrong casing — values are case-sensitive; use \"{match}\"")
+            else:
+                error(file, f"'{field}' must be one of {', '.join(enum)}; got \"{value}\"")
+
         type_ = doc.get("type")
         if type_ is None:
             error(file, "'type' is required")
         elif type_ not in type_enum:
-            error(file, f"'type' must be one of {', '.join(type_enum)}; got \"{type_}\"")
+            enum_error("type", type_, type_enum)
 
         scope = doc.get("scope")
         if scope is not None and scope not in scope_enum:
-            error(file, f"'scope' must be one of {', '.join(scope_enum)}; got \"{scope}\"")
+            enum_error("scope", scope, scope_enum)
 
         if scope == "Plugin" and isinstance(message, str) and not re.match(plugin_pattern, message):
             head = message.splitlines()[0][:60] if message else ""

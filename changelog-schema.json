@@ -64,6 +64,7 @@
     "message",
     "type"
   ],
+  "additionalProperties": false,
   "if": {
     "required": [ "scope" ],
     "properties": {
