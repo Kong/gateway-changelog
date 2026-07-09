@@ -78,10 +78,16 @@ def main():
             error(file, f"'scope' must be one of {', '.join(scope_enum)}; got \"{scope}\"")
 
         if scope == "Plugin" and isinstance(message, str) and not re.match(plugin_pattern, message):
+            head = message.splitlines()[0][:60] if message else ""
+            hint = ""
+            if message.startswith(('"', "'")):
+                hint = (" Note: the message starts with a quote character — quotes inside a "
+                        "YAML block scalar (| or >) are part of the content; remove them.")
             error(file, "scope is \"Plugin\", so 'message' must start with one or more "
                         "comma-separated plugin names in bold, followed by a space, e.g. "
                         "\"**rate-limiting** Fixed an issue ...\" or "
-                        "\"**kafka-upstream**, **confluent**: Added ...\"")
+                        "\"**kafka-upstream**, **confluent**: Added ...\". "
+                        f"Actual message starts with: {head!r}.{hint}")
 
         for key in ("prs", "githubs"):
             val = doc.get(key)
