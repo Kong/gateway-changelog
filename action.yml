@@ -24,3 +24,12 @@ runs:
       with:
         jsonSchemaFile: gateway-changelog/changelog-schema.json
         yamlFiles: ${{ inputs.files }}
+
+    - name: explain validation errors
+      if: failure()
+      shell: bash
+      run: |
+        echo '::error::Changelog validation failed. Common causes:'
+        echo '::error::- message: 1-1000 characters, required'
+        echo '::error::- type: one of feature, bugfix, dependency, deprecation, breaking_change, performance (required)'
+        echo '::error::- scope "Plugin": message must start with the plugin name in bold followed by a space, e.g. "**rate-limiting** Fixed an issue ..."'
