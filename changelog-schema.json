@@ -73,8 +73,11 @@
   "then": {
     "properties": {
       "message": {
-        "pattern": "^\\*\\*[^*\\s][^*]*\\*\\*:? ",
-        "description": "When scope is Plugin, message must start with the plugin name in bold, e.g. \"**rate-limiting** ...\""
+        "pattern": "^\\*\\*[^*\\s]([^*]*[^*\\s])?\\*\\*:? ",
+        "description": "When scope is Plugin, message must start with the plugin name in bold, e.g. \"**rate-limiting** ...\"",
+        "message": {
+          "pattern": "must start with the plugin name in bold when scope is \"Plugin\", e.g. \"**rate-limiting** Fixed an issue ...\""
+        }
       }
     }
   }
