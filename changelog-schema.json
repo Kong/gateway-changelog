@@ -63,20 +63,5 @@
   "required": [
     "message",
     "type"
-  ],
-  "additionalProperties": false,
-  "if": {
-    "required": [ "scope" ],
-    "properties": {
-      "scope": { "const": "Plugin" }
-    }
-  },
-  "then": {
-    "properties": {
-      "message": {
-        "pattern": "^(?:\\*\\*[^*\\s](?:[^*]*[^*\\s])?\\*\\*)(?:, ?\\*\\*[^*\\s](?:[^*]*[^*\\s])?\\*\\*)*:? ",
-        "description": "When scope is Plugin, message must start with one or more comma-separated plugin names in bold, e.g. \"**rate-limiting** ...\" or \"**kafka-upstream**, **confluent**: ...\""
-      }
-    }
-  }
+  ]
 }
