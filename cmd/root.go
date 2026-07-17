@@ -14,7 +14,8 @@ func New() *cli.App {
 		Name:        "changelog",
 		Usage:       "changelog [command]",
 		Description: "A changelog tool to manage changelog.",
-		Version:     "2.0.3",
+		// whenever you bump the version, please update the
+		Version: "2.1.0", // "REQUIRED_VERSION" of changelog/Makefile in EE repo
 
 		// global flags
 		Flags: []cli.Flag{

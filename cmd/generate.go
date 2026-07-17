@@ -36,6 +36,13 @@ type GenerateCmdOptions struct {
 
 	ChangelogPaths []string
 
+	// SourceBranch is the minor branch that the fix-release branch being
+	// generated was cut from (e.g. origin/next/3.14.x.x). When set, every entry
+	// is attributed to the PR of its commit on this minor branch — the
+	// release-line (backport) PR — rather than the upstream/master PR or the
+	// sync PR. Empty uses the introducing commit directly (backward-compatible).
+	SourceBranch string
+
 	WithJiras bool
 
 	GithubApiOwner string
@@ -208,6 +215,82 @@ func fetchMergedPullRequestFromCommitMessage(commit string) (*github.PullRequest
 	return nil, nil
 }
 
+// resolveMergedPR finds the merged PR that introduced the given commit, first
+// via the GitHub "list PRs associated with a commit" API and, failing that, by
+// parsing PR references out of the commit message.
+func resolveMergedPR(commit string) (*github.PullRequest, error) {
+	prs, _, err := client.PullRequests.ListPullRequestsWithCommit(context.TODO(), options.GithubApiOwner, options.GithubApiRepo, commit, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch pulls for commit %s: %v", commit, err)
+	}
+
+	mergedPR := findMergedPullRequest(prs)
+	if mergedPR == nil {
+		mergedPR, err = fetchMergedPullRequestFromCommitMessage(commit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve merged PR from commit message: %v", err)
+		}
+		if debug && mergedPR != nil {
+			Debug("resolved merged PR #%d from commit message for %s", mergedPR.GetNumber(), commit)
+		}
+	}
+
+	return mergedPR, nil
+}
+
+// releaseLineCandidates returns the commit SHAs to resolve a changelog entry's
+// PR from, in priority order, so the entry is attributed to the PR of its commit
+// on the minor branch (options.SourceBranch, e.g. next/3.14.x.x) — the
+// release-line PR — rather than the upstream/master PR or the sync PR.
+//
+// A fix-release branch (e.g. next/3.14.0.9) is cut from the minor branch and
+// then synced by cherry-picking. The introducing commit is either:
+//
+//   - already on the minor branch (present before the cut) — use it as-is; or
+//   - synced in after the cut — locate its counterpart on the minor branch by,
+//     in order: (1) the `git cherry-pick -x` trailer, when the recorded source
+//     is itself on the minor branch; (2) the minor-branch commit that
+//     cherry-picked the same upstream source (the backport commit); (3) the
+//     minor-branch commit that introduced the entry's changelog file, which is
+//     cherry-picked verbatim during the sync and so identifies the counterpart
+//     even when no trailer was recorded (e.g. a backport applied without -x) and
+//     regardless of what else the sync commit touched.
+//
+// The introducing commit is always kept as the last fallback so an entry is
+// never dropped when the preferred commit has no resolvable merged PR.
+func releaseLineCandidates(commit, filename string) []string {
+	if options.SourceBranch == "" || utils.IsAncestor(options.RepoPath, commit, options.SourceBranch) {
+		return []string{commit}
+	}
+
+	// Prefer the recorded cherry-pick provenance (exact and cheap): the source
+	// itself when it is on the minor branch, else the minor-branch commit that
+	// backported the same source.
+	src := utils.FindCherryPickSource(options.RepoPath, commit)
+	if src != "" {
+		if utils.IsAncestor(options.RepoPath, src, options.SourceBranch) {
+			return []string{src, commit}
+		}
+		if onBranch := utils.FindCherryPickOnBranch(options.RepoPath, options.SourceBranch, src); onBranch != "" {
+			return []string{onBranch, commit}
+		}
+	}
+
+	// No usable trailer mapping (no trailer, or the source is upstream with no
+	// minor-branch backport referencing it): find the minor-branch commit that
+	// introduced this entry's changelog file.
+	if origin := utils.FindFileOriginOnBranch(options.RepoPath, options.SourceBranch, filename); origin != "" {
+		return []string{origin, commit}
+	}
+
+	// Last resort: the recorded upstream source (if any) as the best available
+	// origin, otherwise the introducing commit itself.
+	if src != "" {
+		return []string{src, commit}
+	}
+	return []string{commit}
+}
+
 func fetchCommitContext(filename string) (ctx CommitContext, err error) {
 	commit, err := utils.FindOriginalCommit(options.RepoPath, filename)
 	if err != nil {
@@ -218,24 +301,25 @@ func fetchCommitContext(filename string) (ctx CommitContext, err error) {
 		Debug("file %s original commit: %s", filename, commit)
 	}
 
-	prs, _, err := client.PullRequests.ListPullRequestsWithCommit(context.TODO(), options.GithubApiOwner, options.GithubApiRepo, commit, nil)
-	if err != nil {
-		return ctx, fmt.Errorf("failed to fetch pulls for commit %s: %v", commit, err)
+	candidates := releaseLineCandidates(commit, filename)
+	if debug && candidates[0] != commit {
+		Debug("commit %s attributed to release-line commit %s (via %v)", commit, candidates[0], candidates)
 	}
 
-	mergedPR := findMergedPullRequest(prs)
-	if mergedPR == nil {
-		mergedPR, err = fetchMergedPullRequestFromCommitMessage(commit)
+	var mergedPR *github.PullRequest
+	for _, sha := range candidates {
+		mergedPR, err = resolveMergedPR(sha)
 		if err != nil {
-			return ctx, fmt.Errorf("failed to resolve merged PR from commit message: %v", err)
+			return ctx, err
 		}
-		if debug && mergedPR != nil {
-			Debug("resolved merged PR #%d from commit message for %s", mergedPR.GetNumber(), commit)
+		if mergedPR != nil {
+			ctx.SHA = sha
+			break
 		}
 	}
 
 	if mergedPR == nil {
-		return ctx, &MissingPullRequestError{CommitSHA: commit}
+		return ctx, &MissingPullRequestError{CommitSHA: ctx.SHA}
 	}
 
 	ctx.PrCtx = PullRequestContext{
@@ -284,7 +368,11 @@ func parseGithub(githubNos []int) []*Github {
 	for _, no := range githubNos {
 		github := &Github{
 			Name: fmt.Sprintf("#%d", no),
-			Link: fmt.Sprintf("https://github.com/%s/issues/%d", options.GithubIssueRepo, no),
+			// Use the /pull/ form so the common case (a resolved PR or a `prs`
+			// entry) links straight to the PR. GitHub redirects /pull/<n> to
+			// /issues/<n> when <n> is actually an issue, so genuine issue
+			// references in the `githubs` field still resolve correctly.
+			Link: fmt.Sprintf("https://github.com/%s/pull/%d", options.GithubIssueRepo, no),
 		}
 		list = append(list, github)
 	}
@@ -563,6 +651,11 @@ func newGenerateCmd() *cli.Command {
 				Usage:    "Display Jira links",
 				Required: false,
 			},
+			&cli.StringFlag{
+				Name:     "source-branch",
+				Usage:    "The minor branch the fix-release branch was cut from (origin/next/3.14.x.x). When set, each entry is attributed to the PR of its commit on this branch (the release-line/backport PR) instead of the upstream/master or sync PR.",
+				Required: false,
+			},
 		},
 		Action: func(c *cli.Context) error {
 			githubToken := os.Getenv("GITHUB_TOKEN")
@@ -580,14 +673,22 @@ func newGenerateCmd() *cli.Command {
 
 			parts := strings.Split(c.String("github-api-repo"), "/")
 
+			repoPath := c.String("repo-path")
+			sourceBranch := c.String("source-branch")
+			if sourceBranch != "" && !utils.RefExists(repoPath, sourceBranch) {
+				Error("source branch %q not found in %s; cherry-pick source attribution disabled", sourceBranch, repoPath)
+				sourceBranch = ""
+			}
+
 			options = GenerateCmdOptions{
-				RepoPath:        c.String("repo-path"),
+				RepoPath:        repoPath,
 				ChangelogPaths:  c.StringSlice("changelog-paths"),
 				Title:           c.String("title"),
 				GithubApiOwner:  parts[0],
 				GithubApiRepo:   parts[1],
 				GithubIssueRepo: c.String("github-issue-repo"),
 				WithJiras:       c.Bool("with-jiras"),
+				SourceBranch:    sourceBranch,
 			}
 
 			return Generate()
