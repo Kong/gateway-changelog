@@ -676,7 +676,7 @@ func newGenerateCmd() *cli.Command {
 			repoPath := c.String("repo-path")
 			sourceBranch := c.String("source-branch")
 			if sourceBranch != "" && !utils.RefExists(repoPath, sourceBranch) {
-				Error("source branch %q not found in %s; cherry-pick source attribution disabled", sourceBranch, repoPath)
+				Error("source branch %q not found in %s; cherry-pick source attribution disabled\n", sourceBranch, repoPath)
 				sourceBranch = ""
 			}
 
