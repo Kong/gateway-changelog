@@ -105,6 +105,8 @@ def main():
                         "comma-separated plugin names in bold, followed by a space, e.g. "
                         "\"**rate-limiting** Fixed an issue ...\" or "
                         "\"**kafka-upstream**, **confluent**: Added ...\". "
+                        "An optional \"**<X> Only**. \" prefix (e.g. \"**Konnect Only**. \") "
+                        "may precede the plugin names. "
                         f"Actual message starts with: {head!r}.{hint}")
 
         for key in ("prs", "githubs"):
