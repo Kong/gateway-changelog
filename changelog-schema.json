@@ -74,8 +74,8 @@
   "then": {
     "properties": {
       "message": {
-        "pattern": "^(?:\\*\\*[^*\\s](?:[^*]*[^*\\s])?\\*\\*)(?:, ?\\*\\*[^*\\s](?:[^*]*[^*\\s])?\\*\\*)*:? ",
-        "description": "When scope is Plugin, message must start with one or more comma-separated plugin names in bold, e.g. \"**rate-limiting** ...\" or \"**kafka-upstream**, **confluent**: ...\""
+        "pattern": "^(?:\\*\\*[^*\\s][^*]* Only\\*\\*\\. )?(?:\\*\\*[^*\\s](?:[^*]*[^*\\s])?\\*\\*)(?:, ?\\*\\*[^*\\s](?:[^*]*[^*\\s])?\\*\\*)*:? ",
+        "description": "When scope is Plugin, message must start with one or more comma-separated plugin names in bold, e.g. \"**rate-limiting** ...\" or \"**kafka-upstream**, **confluent**: ...\". An optional \"**<X> Only**. \" prefix (e.g. \"**Konnect Only**. \") may precede the plugin names."
       }
     }
   }
