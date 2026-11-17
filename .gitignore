@@ -3,3 +3,4 @@
 cmd/changelog-markdown.tmpl
 
 !CLAUDE.md
+dist/

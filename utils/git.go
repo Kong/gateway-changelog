@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,6 +21,36 @@ type NoCommitsFoundError struct {
 
 func (e *NoCommitsFoundError) Error() string {
 	return fmt.Sprintf("no commits found for %s", e.FileName)
+}
+
+// ValidateRevision rejects values that git could interpret as something other
+// than a revision: an empty string, a value starting with '-' (which git would
+// parse as an option), or one containing control characters.
+func ValidateRevision(rev string) error {
+	if rev == "" {
+		return errors.New("revision must not be empty")
+	}
+	if strings.HasPrefix(rev, "-") {
+		return fmt.Errorf("invalid revision %q: must not start with '-'", rev)
+	}
+	if strings.ContainsFunc(rev, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return fmt.Errorf("invalid revision %q: must not contain control characters", rev)
+	}
+	return nil
+}
+
+// gitOutput runs git in workingDir and returns its standard output.
+//
+// git is executed directly, never through a shell. So that caller-supplied
+// values are always treated as revisions or paths and never as options,
+// callers pass every revision through ValidateRevision and place it after
+// "--end-of-options", and place file paths after "--". "--end-of-options"
+// requires git >= 2.30 for rev-parse (2.24 for the other subcommands used
+// here).
+func gitOutput(workingDir string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", args...) // #nosec G204 -- fixed binary, no shell; revisions validated and placed after --end-of-options, paths after "--"
+	cmd.Dir = workingDir
+	return cmd.Output()
 }
 
 func normalizePath(filename string) string {
@@ -54,9 +85,7 @@ func pathRelativeToWorkingDir(workingDir, filename string) string {
 }
 
 func gitPrefix(workingDir string) string {
-	cmd := exec.Command("git", "rev-parse", "--show-prefix")
-	cmd.Dir = workingDir
-	output, err := cmd.Output()
+	output, err := gitOutput(workingDir, "rev-parse", "--show-prefix")
 	if err != nil {
 		return ""
 	}
@@ -95,10 +124,11 @@ func resolveRenameSource(prefix, currentName, oldName, newName string) string {
 // findRenameSource checks if a commit renamed a file to `filename`,
 // returns the old filename if it was a rename, otherwise returns "".
 func findRenameSource(workingDir, commit, filename string) string {
-	cmd := exec.Command("git", "diff-tree", "-r", "-M",
-		"--no-commit-id", "--diff-filter=R", "--name-status", commit)
-	cmd.Dir = workingDir
-	output, err := cmd.Output()
+	if ValidateRevision(commit) != nil {
+		return ""
+	}
+	output, err := gitOutput(workingDir, "diff-tree", "-r", "-M",
+		"--no-commit-id", "--diff-filter=R", "--name-status", "--end-of-options", commit)
 	if err != nil {
 		return ""
 	}
@@ -122,10 +152,8 @@ func findRenameSource(workingDir, commit, filename string) string {
 
 // findAddedCommit finds the commit where the file was first added.
 func findAddedCommit(workingDir, filename string) string {
-	cmd := exec.Command("git", "log", "--diff-filter=A", "--no-show-signature",
+	output, err := gitOutput(workingDir, "log", "--diff-filter=A", "--no-show-signature",
 		"--pretty=format:%H", "--", filename)
-	cmd.Dir = workingDir
-	output, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
@@ -139,9 +167,7 @@ func findAddedCommit(workingDir, filename string) string {
 
 // findOldestCommit returns the oldest commit that touched the file.
 func findOldestCommit(workingDir, filename string) string {
-	cmd := exec.Command("git", "log", "--no-show-signature", "--pretty=format:%H", "--", filename)
-	cmd.Dir = workingDir
-	output, err := cmd.Output()
+	output, err := gitOutput(workingDir, "log", "--no-show-signature", "--pretty=format:%H", "--", filename)
 	if err != nil {
 		return ""
 	}
@@ -165,9 +191,11 @@ func findOldestCommit(workingDir, filename string) string {
 // trailer is the most recent hop and identifies the immediate source, so that
 // is the one returned.
 func FindCherryPickSource(workingDir, commit string) string {
-	cmd := exec.Command("git", "log", "-1", "--no-show-signature", "--format=%B", commit)
-	cmd.Dir = workingDir
-	output, err := cmd.Output()
+	if ValidateRevision(commit) != nil {
+		return ""
+	}
+	output, err := gitOutput(workingDir, "log", "-1", "--no-show-signature", "--format=%B",
+		"--end-of-options", commit)
 	if err != nil {
 		return ""
 	}
@@ -190,10 +218,12 @@ func FindCherryPickSource(workingDir, commit string) string {
 // lets an entry be attributed to the minor-branch backport PR rather than the
 // upstream/master PR.
 func FindCherryPickOnBranch(workingDir, branch, sourceSHA string) string {
-	cmd := exec.Command("git", "log", "--no-show-signature", "--fixed-strings",
-		"--grep=cherry picked from commit "+sourceSHA, "--format=%H", branch)
-	cmd.Dir = workingDir
-	output, err := cmd.Output()
+	// An empty sourceSHA would make the grep match every recorded cherry-pick.
+	if sourceSHA == "" || ValidateRevision(branch) != nil {
+		return ""
+	}
+	output, err := gitOutput(workingDir, "log", "--no-show-signature", "--fixed-strings",
+		"--grep=cherry picked from commit "+sourceSHA, "--format=%H", "--end-of-options", branch)
 	if err != nil {
 		return ""
 	}
@@ -209,10 +239,11 @@ func FindCherryPickOnBranch(workingDir, branch, sourceSHA string) string {
 // addedCommitOnBranch returns the most recent commit reachable from branch that
 // added a path matching pathspec, or "" when none is found.
 func addedCommitOnBranch(workingDir, branch, pathspec string) string {
-	cmd := exec.Command("git", "log", branch, "--diff-filter=A", "--no-show-signature",
-		"--format=%H", "--", pathspec)
-	cmd.Dir = workingDir
-	output, err := cmd.Output()
+	if ValidateRevision(branch) != nil {
+		return ""
+	}
+	output, err := gitOutput(workingDir, "log", "--diff-filter=A", "--no-show-signature",
+		"--format=%H", "--end-of-options", branch, "--", pathspec)
 	if err != nil {
 		return ""
 	}
@@ -253,9 +284,11 @@ func FindFileOriginOnBranch(workingDir, branch, file string) string {
 
 // RefExists reports whether ref resolves to a commit in the repository.
 func RefExists(workingDir, ref string) bool {
-	cmd := exec.Command("git", "rev-parse", "--verify", "--quiet", ref+"^{commit}")
-	cmd.Dir = workingDir
-	return cmd.Run() == nil
+	if ValidateRevision(ref) != nil {
+		return false
+	}
+	_, err := gitOutput(workingDir, "rev-parse", "--verify", "--quiet", "--end-of-options", ref+"^{commit}")
+	return err == nil
 }
 
 // IsAncestor reports whether commit is an ancestor of (i.e. reachable from) ref.
@@ -263,9 +296,11 @@ func RefExists(workingDir, ref string) bool {
 // callers should validate ref with RefExists first when a missing ref must not
 // be treated as "not an ancestor".
 func IsAncestor(workingDir, commit, ref string) bool {
-	cmd := exec.Command("git", "merge-base", "--is-ancestor", commit, ref)
-	cmd.Dir = workingDir
-	return cmd.Run() == nil
+	if ValidateRevision(commit) != nil || ValidateRevision(ref) != nil {
+		return false
+	}
+	_, err := gitOutput(workingDir, "merge-base", "--is-ancestor", "--end-of-options", commit, ref)
+	return err == nil
 }
 
 // FindOriginalCommit traces back through renames to find

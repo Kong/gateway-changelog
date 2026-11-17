@@ -207,3 +207,67 @@ func TestIsAncestor(t *testing.T) {
 		t.Error("unknown commit should not be reported as an ancestor")
 	}
 }
+
+func TestValidateRevision(t *testing.T) {
+	valid := []string{"HEAD", "minor", "origin/next/3.14.x.x", "deadbeef", "HEAD~1", "main@{1 day ago}"}
+	for _, rev := range valid {
+		if err := ValidateRevision(rev); err != nil {
+			t.Errorf("ValidateRevision(%q) = %v, want nil", rev, err)
+		}
+	}
+
+	invalid := []string{"", "-", "--foo", "-p", "main\n--foo", "main\x00"}
+	for _, rev := range invalid {
+		if err := ValidateRevision(rev); err == nil {
+			t.Errorf("ValidateRevision(%q) = nil, want error", rev)
+		}
+	}
+}
+
+// TestRevisionsNotParsedAsOptions checks that a caller-supplied revision (e.g.
+// the --source-branch flag) is never interpreted by git as an option. It uses
+// "--output=<file>" because, if it were treated as an option, its effect
+// (creating the file) would be observable.
+func TestRevisionsNotParsedAsOptions(t *testing.T) {
+	dir := newRepo(t)
+	src := commitWithMessage(t, dir, "fix: original change")
+	commitWithMessage(t, dir, "[backport] fix\n\n(cherry picked from commit "+src+")")
+	commitFile(t, dir, "changelog/unreleased/kong/fix.yml", "message: fixed\n", "fix (#1)")
+
+	outFile := filepath.Join(t.TempDir(), "out")
+	optionLike := "--output=" + outFile
+
+	if got := FindCherryPickOnBranch(dir, optionLike, src); got != "" {
+		t.Errorf("FindCherryPickOnBranch(option-like) = %q, want \"\"", got)
+	}
+	if got := FindFileOriginOnBranch(dir, optionLike, "changelog/unreleased/kong/fix.yml"); got != "" {
+		t.Errorf("FindFileOriginOnBranch(option-like) = %q, want \"\"", got)
+	}
+	if got := FindCherryPickSource(dir, optionLike); got != "" {
+		t.Errorf("FindCherryPickSource(option-like) = %q, want \"\"", got)
+	}
+	if RefExists(dir, optionLike) {
+		t.Error("RefExists(option-like) = true, want false")
+	}
+	if IsAncestor(dir, optionLike, "HEAD") || IsAncestor(dir, src, optionLike) {
+		t.Error("IsAncestor(option-like) = true, want false")
+	}
+	if got := findRenameSource(dir, optionLike, "changelog/unreleased/kong/fix.yml"); got != "" {
+		t.Errorf("findRenameSource(option-like) = %q, want \"\"", got)
+	}
+
+	if _, err := os.Stat(outFile); err == nil {
+		t.Fatalf("revision was parsed as a git option: %s was created", outFile)
+	}
+}
+
+func TestFindCherryPickOnBranchEmptySource(t *testing.T) {
+	dir := newRepo(t)
+	src := commitWithMessage(t, dir, "fix: original change")
+	commitWithMessage(t, dir, "[backport] fix\n\n(cherry picked from commit "+src+")")
+
+	// An empty source must not match every cherry-picked commit.
+	if got := FindCherryPickOnBranch(dir, "HEAD", ""); got != "" {
+		t.Fatalf("FindCherryPickOnBranch(empty source) = %q, want \"\"", got)
+	}
+}

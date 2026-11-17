@@ -1,0 +1,5 @@
+message: "**rate-limiting** Added an example option used by the action self-test."
+type: feature
+scope: Plugin
+jiras:
+  - "FTI-1234"
