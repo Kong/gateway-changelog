@@ -1,0 +1,5 @@
+# Intentionally invalid: used by the action self-test to check that
+# validation fails. "Bugfix" must be lowercase "bugfix".
+message: Fixed something.
+type: Bugfix
+scope: Core

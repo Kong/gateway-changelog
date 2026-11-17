@@ -25,7 +25,11 @@ runs:
         jsonSchemaFile: gateway-changelog/changelog-schema.json
         yamlFiles: ${{ inputs.files }}
 
+    # Inputs are passed through env and referenced as quoted variables rather
+    # than interpolated into the script with `${{ }}`.
     - name: explain validation errors
       if: failure()
       shell: bash
-      run: python3 "${GITHUB_ACTION_PATH}/scripts/explain-changelog-errors.py" "gateway-changelog/changelog-schema.json" '${{ inputs.files }}'
+      env:
+        CHANGELOG_FILES: ${{ inputs.files }}
+      run: python3 "${GITHUB_ACTION_PATH}/scripts/explain-changelog-errors.py" "gateway-changelog/changelog-schema.json" "$CHANGELOG_FILES"

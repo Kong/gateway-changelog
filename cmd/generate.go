@@ -16,9 +16,9 @@ import (
 	"text/template"
 
 	"github.com/Kong/changelog/utils"
-	"github.com/google/go-github/v56/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/urfave/cli/v2"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -669,15 +669,26 @@ func newGenerateCmd() *cli.Command {
 					Transport: http.DefaultTransport,
 				}
 			}
-			client = github.NewClient(httpClient).WithAuthToken(githubToken)
+			var err error
+			client, err = github.NewClient(github.WithHTTPClient(httpClient), github.WithAuthToken(githubToken))
+			if err != nil {
+				return fmt.Errorf("failed to create GitHub client: %w", err)
+			}
 
 			parts := strings.Split(c.String("github-api-repo"), "/")
 
 			repoPath := c.String("repo-path")
 			sourceBranch := c.String("source-branch")
-			if sourceBranch != "" && !utils.RefExists(repoPath, sourceBranch) {
-				Error("source branch %q not found in %s; cherry-pick source attribution disabled\n", sourceBranch, repoPath)
-				sourceBranch = ""
+			if sourceBranch != "" {
+				// Reject values git would parse as an option before the branch
+				// is passed to any git command.
+				if err := utils.ValidateRevision(sourceBranch); err != nil {
+					return fmt.Errorf("invalid --source-branch: %w", err)
+				}
+				if !utils.RefExists(repoPath, sourceBranch) {
+					Error("source branch %q not found in %s; cherry-pick source attribution disabled\n", sourceBranch, repoPath)
+					sourceBranch = ""
+				}
 			}
 
 			options = GenerateCmdOptions{

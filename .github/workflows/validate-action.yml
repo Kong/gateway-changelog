@@ -1,0 +1,39 @@
+name: Validate action
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Valid changelogs pass
+      uses: ./
+      with:
+        files: testdata/changelog/valid/*.yml
+
+    # The files input may contain any characters (quotes, `$`, parentheses);
+    # it must reach the explain script unchanged, as a literal string.
+    - name: Invalid changelogs fail
+      id: invalid
+      continue-on-error: true
+      uses: ./
+      with:
+        files: "testdata/changelog/invalid/*.yml,it's \"$(touch unexpected-file)\" it's"
+
+    - name: Check results
+      env:
+        INVALID_OUTCOME: ${{ steps.invalid.outcome }}
+      run: |
+        test "$INVALID_OUTCOME" = failure || { echo "::error::invalid changelog was not rejected"; exit 1; }
+        test ! -e unexpected-file || { echo "::error::files input was not passed as a literal string"; exit 1; }

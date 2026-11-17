@@ -3,28 +3,43 @@ on:
   release:
     types: [created]
 
-permissions:
-    contents: write
-    packages: write
+# Nothing by default; the job below gets only what it needs.
+permissions: {}
 
 jobs:
-  releases-matrix:
-    name: Release Go Binary
+  release:
+    name: Release Go Binaries
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        goos: [linux, windows, darwin]
-        goarch: [amd64, arm64]
+    permissions:
+      contents: write # upload assets to the release
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-    - run: make generate
-
-    - uses: wangyoucao577/go-release-action@2ac3035fa4c4feed6a8272ce278b0577b93cf8e5 # v1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        goos: ${{ matrix.goos }}
-        goarch: ${{ matrix.goarch }}
-        goversion: "https://dl.google.com/go/go1.21.1.linux-amd64.tar.gz"
-        project_path: "."
-        binary_name: "changelog"
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        # Release builds start from a clean state, without a restored cache.
+        cache: false
+
+    - name: Test
+      run: make test
+
+    - name: govulncheck
+      run: make vulncheck
+
+    # Pass the tag to the script as a quoted argument rather than a make variable.
+    - name: Build release assets
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        make generate
+        ./scripts/build-release.sh "$RELEASE_TAG" dist
+
+    - name: Upload release assets
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: gh release upload "$RELEASE_TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
